@@ -1,0 +1,44 @@
+### Find all users
+GET http://localhost:9876/api/v1/user
+Accept: application/json
+Content-Type: application/json
+
+### Find User by ID
+GET http://localhost:9876/api/v1/user/1
+Accept: application/json
+Content-Type: application/json
+
+### Create a new user
+POST http://localhost:9876/api/v1/user
+Accept: application/json
+Content-Type: application/json
+
+{
+  "email": "john.doe1111@example.com",
+  "password": "password123"
+}
+
+### Update a user
+PATCH http://localhost:9876/api/v1/user/8
+Accept: application/json
+Content-Type: application/json
+
+{
+    "email": "luke.doe@example.com",
+    "username": "luke.doe",
+    "password": "newpassword123"
+}
+
+### Delete a user
+DELETE http://localhost:9876/api/v1/user/8
+Accept: application/json
+
+### Find all workspaces
+GET http://localhost:9876/api/v1/workspace
+Accept: application/json
+Content-Type: application/json
+
+### Find workspace by ID
+GET http://localhost:9876/api/v1/workspace/1
+Accept: application/json
+Content-Type: application/json
