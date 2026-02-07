@@ -1,9 +1,11 @@
-import { Controller, Get, Post, Patch, Delete, Param, ParseIntPipe, Body } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Param, ParseIntPipe, Body, UseGuards } from '@nestjs/common';
 import { User } from './user.entity';
 import { UserService } from './user.service';
 import { CreateUserDto, UpdateUserDto } from './user.dto';
+import { AuthenticationGuard } from '../authentication/authentication.guard';
 
 @Controller({ path: 'user', version: '1' })
+@UseGuards(AuthenticationGuard)
 export class UserController {
   constructor(private readonly userService: UserService) {}
 
@@ -17,19 +19,13 @@ export class UserController {
     return await this.userService.findOne(id);
   }
 
-  @Post()
-  async create(@Body() user: CreateUserDto): Promise<User> {
-    console.log(user);
-    return await this.userService.create(user);
-  }
-
   @Patch(':id')
   async update(@Param('id', ParseIntPipe) id: number, @Body() user: UpdateUserDto): Promise<User> {
     return await this.userService.update(id, user);
   }
 
   @Delete(':id')
-  async delete(@Param('id', ParseIntPipe) id: number): Promise<void> {
-    await this.userService.delete(id, 'soft');
+  async delete(@Param('id', ParseIntPipe) id: number): Promise<User> {
+    return await this.userService.delete(id, 'soft');
   }
 }

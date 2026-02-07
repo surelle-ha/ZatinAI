@@ -5,12 +5,16 @@ import schema from './config/schema';
 import { WorkspaceModule } from './workspace/workspace.module';
 import { CqrsModule } from '@nestjs/cqrs';
 import { UserModule } from './user/user.module';
+import { AuthenticationModule } from './authentication/authentication.module';
+import { ProfileModule } from './profile/profile.module';
 
 @Module({
   imports: [
+    AuthenticationModule,
     /**
      * DOMAIN MODULES
      */
+    ProfileModule,
     UserModule,
     WorkspaceModule,
     /**

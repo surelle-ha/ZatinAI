@@ -1,7 +1,8 @@
 import { Injectable, Inject, NotFoundException, Logger } from '@nestjs/common';
-import { DeleteResult, Repository, UpdateResult } from 'typeorm';
+import { Repository } from 'typeorm';
 import { User } from './user.entity';
 import { WorkspaceService } from '../workspace/workspace.service';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class UserService {
@@ -65,13 +66,22 @@ export class UserService {
   }
 
   /**
+   * Find a user by its email address.
+   * @returns The User entity with the specified email, or null if no user is found.
+   * @throws Error if there is an issue accessing the database to retrieve the user.
+   */
+  async findOneByEmail(email: string): Promise<User | null> {
+    return await this.userRepository.findOneBy({ email });
+  }
+
+  /**
    * Create a new user and automatically create a default workspace for them.
    * The username is generated based on the email or a timestamp to ensure uniqueness.
    * @returns The newly created User entity.
    * @throws Error if there is an issue accessing the database to create the user or workspace.
    */
   async create(user: Partial<User>): Promise<User> {
-    this.logger.debug('Creating user: ' + JSON.stringify(user));
+    this.logger.debug('Creating user: ' + JSON.stringify({ ...user, password: '[REDACTED]' }));
     const username = await this.generateUniqueUsername(user.email);
 
     const processedUser: Partial<User> = {
@@ -113,10 +123,12 @@ export class UserService {
    * @throws NotFoundException if the user with the given ID does not exist.
    * @throws Error if there is an issue accessing the database to delete the user.
    */
-  async delete(id: number, type: 'soft' | 'hard'): Promise<void> {
-    const result: UpdateResult | DeleteResult = type === 'soft' ? await this.userRepository.softDelete(id) : await this.userRepository.delete(id);
+  async delete(id: number, type: 'soft' | 'hard'): Promise<User> {
+    const user = await this.findOne(id);
+    const result = type === 'soft' ? await this.userRepository.softDelete(id) : await this.userRepository.delete(id);
     if ((result.affected ?? 0) === 0) {
       throw new NotFoundException(`User with id ${id} not found`);
     }
+    return user;
   }
 }
