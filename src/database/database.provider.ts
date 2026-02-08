@@ -1,6 +1,6 @@
 import { DataSource } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
-import { Configuration } from '../config/schema';
+import { Configuration } from '../config/interfaces';
 
 export const databaseProviders = [
   {

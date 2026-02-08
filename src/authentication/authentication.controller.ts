@@ -1,7 +1,7 @@
-import { Controller, Post, Body, UseGuards, Get, Request } from '@nestjs/common';
+import { Controller, Post, Body } from '@nestjs/common';
 import { BasicSignInDto, BasicSignUpDto } from './authentication.dto';
-import { AuthenticationService, SignInResponse } from './authentication.service';
-import { AuthenticationGuard } from './authentication.guard';
+import { AuthenticationService } from './authentication.service';
+import { SignInResponse } from '../config/interfaces';
 
 @Controller({ path: 'auth', version: '1' })
 export class AuthenticationController {
@@ -20,11 +20,5 @@ export class AuthenticationController {
   @Post('refresh-token')
   async refreshToken(@Body('refreshToken') refreshToken: string): Promise<SignInResponse> {
     return await this.authenticationService.refreshToken(refreshToken);
-  }
-
-  @Get('profile')
-  @UseGuards(AuthenticationGuard)
-  getProfile(@Request() req): any {
-    return req.user;
   }
 }

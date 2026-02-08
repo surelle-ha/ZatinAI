@@ -2,22 +2,7 @@ import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/co
 import { UserService } from '../user/user.service';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
-
-export interface SignInResponse {
-  accessToken: string;
-  refreshToken: string;
-}
-
-export interface AccessTokenPayload {
-  sub: number;
-  email: string;
-  username: string;
-}
-
-export interface RefreshTokenPayload {
-  sub: number;
-  type: 'refresh';
-}
+import { AccessTokenPayload, RefreshTokenPayload, SignInResponse } from '../config/interfaces';
 
 @Injectable()
 export class AuthenticationService {

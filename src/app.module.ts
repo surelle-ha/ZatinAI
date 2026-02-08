@@ -7,6 +7,8 @@ import { CqrsModule } from '@nestjs/cqrs';
 import { UserModule } from './user/user.module';
 import { AuthenticationModule } from './authentication/authentication.module';
 import { ProfileModule } from './profile/profile.module';
+import { APP_FILTER } from '@nestjs/core';
+import { DatabaseExceptionFilter } from './database/database.filter';
 
 @Module({
   imports: [
@@ -31,6 +33,12 @@ import { ProfileModule } from './profile/profile.module';
     // TODO: Set up CQRS Module (Preferred: NestJS CQRS)
     // TODO: Set up gRPC Module (Preferred: NestJS gRPC)
     // TODO: Set up Websocket Module (Preferred: NestJS Websockets)
+  ],
+  providers: [
+    {
+      provide: APP_FILTER,
+      useClass: DatabaseExceptionFilter,
+    },
   ],
 })
 export class AppModule {}

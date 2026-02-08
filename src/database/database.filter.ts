@@ -1,14 +1,14 @@
-import { ExceptionFilter, Catch, ArgumentsHost, BadRequestException } from '@nestjs/common';
+import { ExceptionFilter, Catch, ArgumentsHost } from '@nestjs/common';
 import { QueryFailedError } from 'typeorm';
 import { FastifyReply } from 'fastify';
 
 @Catch(QueryFailedError)
-export class TypeOrmExceptionFilter implements ExceptionFilter {
+export class DatabaseExceptionFilter implements ExceptionFilter {
   catch(exception: QueryFailedError, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<FastifyReply>();
 
-    const errorCode = (exception.driverError as any)?.code;
+    const errorCode: string = (exception.driverError as any)?.code;
 
     let status = 500;
     let message = 'Database error';

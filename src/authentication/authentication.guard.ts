@@ -1,10 +1,12 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { FastifyRequest } from 'fastify';
-import { RefreshTokenPayload } from './authentication.service';
+import { RefreshTokenPayload } from '../config/interfaces';
 
 @Injectable()
 export class AuthenticationGuard implements CanActivate {
+  private readonly logger = new Logger(AuthenticationGuard.name);
+
   constructor(private jwtService: JwtService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -20,6 +22,7 @@ export class AuthenticationGuard implements CanActivate {
       if (payload.type === 'refresh') {
         throw new UnauthorizedException('Invalid token type');
       }
+      this.logger.debug(`User Payload: `, payload);
       request['user'] = payload;
     } catch (error) {
       if (error instanceof UnauthorizedException) {

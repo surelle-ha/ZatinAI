@@ -1,17 +1,4 @@
-export interface Configuration {
-  server: {
-    name: string;
-    port: number;
-    key: string;
-  };
-  database: {
-    host: string;
-    port: number;
-    username: string;
-    password: string;
-    name: string;
-  };
-}
+import { Configuration } from './interfaces';
 
 export default (): Configuration => ({
   server: {
