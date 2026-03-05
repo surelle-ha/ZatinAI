@@ -90,20 +90,7 @@ export class UserService {
     };
 
     const newUserEntity = this.userRepository.create(processedUser);
-    const savedUser = await this.userRepository.save(newUserEntity);
-
-    try {
-      await this.workspaceService.create({
-        publicName: `${savedUser.username ?? 'User'}'s Workspace`,
-        privateName: `${savedUser.username ?? 'User'}'s Workspace`,
-        ownedBy: savedUser.id,
-        createdBy: savedUser.id,
-      });
-    } catch (err) {
-      this.logger.error(`Failed to create default workspace for user ${savedUser.id}: ${String(err)}`);
-    }
-
-    return savedUser;
+    return this.userRepository.save(newUserEntity);  // ← just save and return
   }
 
   /**

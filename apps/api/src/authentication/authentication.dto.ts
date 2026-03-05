@@ -11,6 +11,10 @@ export class BasicSignInDto {
 }
 
 export class BasicSignUpDto {
+  @IsString()
+  @IsNotEmpty()
+  workspaceName: string;
+
   @IsEmail()
   @IsNotEmpty()
   email: string;

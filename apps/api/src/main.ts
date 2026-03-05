@@ -12,6 +12,10 @@ async function bootstrap(): Promise<void> {
   const configService: ConfigService<unknown, boolean> = app.get(ConfigService);
 
   await app.register(helmet);
+  await app.enableCors({
+    origin: "*",
+    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+  });
   await app.register(compression);
 
   app.useGlobalPipes(

@@ -3,11 +3,19 @@ import { UserService } from '../user/user.service';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { AccessTokenPayload, RefreshTokenPayload, SignInResponse } from '../config/interfaces';
+import {WorkspaceService} from "../workspace/workspace.service";
+import {WorkspaceUserRole} from "../workspace-user/workspace-user.entity";
+import {BillingCycle, WorkspaceSubscriptionStatus} from "../workspace-subscription/workspace-subscription.entity";
+import {WorkspaceUserService} from "../workspace-user/workspace-user.service";
+import {WorkspaceSubscriptionService} from "../workspace-subscription/workspace-subscription.service";
 
 @Injectable()
 export class AuthenticationService {
   constructor(
     private userService: UserService,
+    private workspaceService: WorkspaceService,
+    private workspaceUserService: WorkspaceUserService,
+    private workspaceSubscriptionService: WorkspaceSubscriptionService,
     private jwtService: JwtService,
   ) {}
 
@@ -52,18 +60,60 @@ export class AuthenticationService {
     };
   }
 
-  async signUpByBasic(signupData: { email: string, password: string }): Promise<SignInResponse> {
+  async signUpByBasic(signupData: { workspaceName: string, email: string; password: string }): Promise<SignInResponse> {
     const existingUser = await this.userService.findOneByEmail(signupData.email);
     if (existingUser) {
       throw new ConflictException('Email is already registered');
     }
+    const checkWorkspaceName = await this.workspaceService.findOneByPublicName(signupData.workspaceName);
+    if (checkWorkspaceName) {
+      throw new ConflictException('Workspace name is already taken');
+    }
 
+    // 1. Create user
     const hashedPassword = await bcrypt.hash(signupData.password, 10);
     const newUser = await this.userService.create({
       email: signupData.email,
       password: hashedPassword,
     });
 
+    // 2. Auto-create workspace
+    const workspace = await this.workspaceService.create({
+      publicName: signupData.workspaceName,
+      privateName: `workspace_${newUser.id}_${Date.now()}`,
+      description: '--',
+      isEnabled: true,
+      isProperty: false,
+      ownedBy: newUser.id,
+      createdBy: newUser.id,
+    });
+
+    // 3. Assign user to workspace.
+    await this.workspaceUserService.create({
+      workspaceId: workspace.id,
+      userId: newUser.id,
+      role: WorkspaceUserRole.OWNER,
+      isActive: true,
+      joinedAt: new Date(),
+      invitedBy: null,
+    });
+
+    // 4. Assign subscription = 1 (Free plan) to workspace
+    await this.workspaceSubscriptionService.create({
+      workspaceId: workspace.id,
+      subscriptionId: 1,
+      status: WorkspaceSubscriptionStatus.TRIAL,
+      billingCycle: BillingCycle.MONTHLY,
+      startDate: new Date(),
+      trialEndDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), // 14 days
+      endDate: null,
+      nextBillingDate: null,
+      cancelledAt: null,
+      paymentMethod: null,
+      externalSubscriptionId: null,
+    });
+
+    // 5. Return tokens
     const accessTokenPayload: AccessTokenPayload = {
       sub: newUser.id,
       email: newUser.email,
