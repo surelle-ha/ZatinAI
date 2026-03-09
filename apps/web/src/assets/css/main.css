@@ -1,0 +1,49 @@
+@import "tailwindcss" theme(static);
+@import "@nuxt/ui";
+
+@theme static {
+  --font-sans: 'Public Sans', sans-serif;
+
+  --color-green-50: #EFFDF5;
+  --color-green-100: #D9FBE8;
+  --color-green-200: #B3F5D1;
+  --color-green-300: #75EDAE;
+  --color-green-400: #00DC82;
+  --color-green-500: #00C16A;
+  --color-green-600: #00A155;
+  --color-green-700: #007F45;
+  --color-green-800: #016538;
+  --color-green-900: #0A5331;
+  --color-green-950: #052E16;
+}
+
+/* Base scrollbar */
+.nice-scroll {
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: transparent transparent;
+}
+
+/* WebKit (Chrome, Edge, Tauri) */
+.nice-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.nice-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.nice-scroll::-webkit-scrollbar-thumb {
+  background-color: rgba(100, 100, 100, 0);
+  border-radius: 8px;
+  transition: background-color 0.3s;
+}
+
+/* Show scrollbar only on hover or scroll */
+.nice-scroll:hover::-webkit-scrollbar-thumb {
+  background-color: rgba(100, 100, 100, 0.4);
+}
+
+/* Firefox hover */
+.nice-scroll:hover {
+  scrollbar-color: rgba(100, 100, 100, 0.4) transparent;
+}
