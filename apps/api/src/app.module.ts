@@ -13,6 +13,7 @@ import {SubscriptionModule} from "./subscription/subscription.module";
 import {AgentModule} from "./agent/agent.module";
 import {ScriptFileModule} from "./script-file/script-file.module";
 import {ModelModule} from "./model/model.module";
+import {LessonModule} from "./lesson/lesson.module";
 
 @Module({
     imports: [
@@ -27,6 +28,7 @@ import {ModelModule} from "./model/model.module";
         AgentModule,
         ModelModule,
         ScriptFileModule,
+        LessonModule,
         /**
          * INFRASTRUCTURE MODULES
          */

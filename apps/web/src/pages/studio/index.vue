@@ -22,6 +22,19 @@ interface Message {
   parts: MessagePart[]
   createdAt: number
 }
+interface VisualBlock {
+  id: string
+  html: string
+  label: string        // short title the AI provides via data-label attribute, or auto-generated
+  createdAt: number
+  complete: boolean    // false while still streaming
+}
+
+interface ScoreData {
+  html: string
+  complete: boolean
+}
+
 interface ChatSession {
   id: number | string
   title: string
@@ -30,6 +43,8 @@ interface ChatSession {
   pendingForm: PendingForm | null   // currently shown form
   pendingForms: PendingForm[]         // queue of all forms from last response
   pendingAnswers: string[]            // collected answers while stepping through queue
+  visualBlocks: VisualBlock[]        // append-mode whiteboard blocks — per session
+  scoreData: ScoreData | null        // current score/quiz panel — per session
 }
 interface ScriptFile {
   id: number | string
@@ -63,6 +78,70 @@ const INTERNAL_FILE = reactive<ScriptFile>({
   content: `# Internal System Instructions
 
 These rules are mandatory and override all other instructions.
+
+## Whiteboard Panel
+
+This interface has a split layout: the chat is on the LEFT, and a WHITEBOARD PANEL is on the RIGHT.
+
+The whiteboard is APPEND-BASED — every time you emit a new visual block it is added as a new card below previous ones. Students can scroll back through earlier visuals. Use this generously throughout the session.
+
+Emit visual content using these delimiters:
+
+<@@@VISUAL@@@>
+...your HTML here...
+<@@@VISUAL_END@@@>
+
+### Whiteboard rules
+- Each block becomes a separate scrollable card with a label.
+- Add a data-label attribute to your outermost element to title the card. Example: <div data-label="Binary Search — Step 2">
+- **ONLY use the whiteboard for educational/lesson content**: concept explanations, diagrams, tables, timelines, code walkthroughs, comparisons, flashcards, lesson summaries, study notes.
+- **NEVER use the whiteboard for**: greetings, conversational replies, form questions, quiz answer feedback delivered in chat, or any non-lesson interaction. If you are asking the user a question, use the Interactive Form system instead, NOT the whiteboard.
+- Emit a new block whenever you introduce a new concept or step — do not try to cram everything in one block.
+- Do NOT use <script> tags. Use only inline styles.
+- Each block is independent — you cannot edit previous blocks, only append new ones.
+
+### Whiteboard style guidelines
+- For card heading: <h2 style="font-size:16px;font-weight:700;margin:0 0 10px;color:inherit">Title</h2>
+- For body text: <p style="font-size:13px;line-height:1.7;margin:0 0 8px;color:inherit">...</p>
+- For code: <pre style="background:#1e293b;color:#e2e8f0;padding:14px 16px;border-radius:10px;font-size:12px;line-height:1.6;overflow:auto;margin:10px 0">...</pre>
+- For tables: <table style="width:100%;border-collapse:collapse;font-size:12px;margin:10px 0">
+- For table header: <th style="background:rgba(99,102,241,0.1);padding:8px 12px;text-align:left;font-weight:600;border:1px solid rgba(99,102,241,0.2)">
+- For table cell: <td style="padding:8px 12px;border:1px solid rgba(0,0,0,0.08)">
+- For callout: <div style="background:var(--color-primary-50);border-left:3px solid var(--color-primary-500);padding:10px 14px;border-radius:0 8px 8px 0;margin:10px 0;font-size:13px">
+- For two-column grid: <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:10px 0">
+
+## Score Panel
+
+When conducting a quiz, test, or exercise where you want to track the student's score or progress, emit a score block:
+
+<@@@SCORE@@@>
+...your HTML here...
+<@@@SCORE_END@@@>
+
+### Score panel rules
+- The score panel only appears when you emit a score block — it is hidden otherwise.
+- Update the score block after each question or at the end of the quiz.
+- The panel is small — keep it concise: current score, total questions, and a brief status.
+- You can emit a score block alongside a visual block or a chat response in the same turn.
+- Use this ONLY during structured assessments (quiz, test, drill, exercise). Do not use it for casual conversation.
+
+## Celebration
+
+When the student completes a quiz, finishes a suite, gets a perfect score, or achieves something worthy of celebration, emit this single token on its own line:
+
+<@@@CONFETTI@@@>
+
+Rules:
+- Use it sparingly — only for genuine achievements.
+- Do NOT combine it with a visual or score block on the same line.
+- It triggers a visual celebration effect in the UI.
+
+### Score panel style guidelines
+- Score display: <div style="font-size:28px;font-weight:800;color:var(--color-primary-600);line-height:1">8/10</div>
+- Label: <p style="font-size:11px;color:#6b7280;margin:2px 0 0;text-transform:uppercase;letter-spacing:0.05em">Score</p>
+- Status badge (pass): <span style="background:#d1fae5;color:#065f46;font-size:11px;font-weight:600;padding:2px 10px;border-radius:99px">Passing</span>
+- Status badge (fail): <span style="background:#fee2e2;color:#991b1b;font-size:11px;font-weight:600;padding:2px 10px;border-radius:99px">Needs Work</span>
+- Progress bar: <div style="height:6px;background:#e5e7eb;border-radius:99px;margin:8px 0"><div style="height:6px;background:var(--color-primary-500);border-radius:99px;width:80%"></div></div>
 
 ## Interactive Forms
 
@@ -189,7 +268,7 @@ const agentsError = ref<string | null>(null)
 // ─── Agent helpers ────────────────────────────────────────────────────────────
 
 function makeLocalSession(): ChatSession {
-  return { id: crypto.randomUUID(), title: 'New Chat', messages: [], createdAt: Date.now(), pendingForm: null, pendingForms: [], pendingAnswers: [] }
+  return { id: crypto.randomUUID(), title: 'New Chat', messages: [], createdAt: Date.now(), pendingForm: null, pendingForms: [], pendingAnswers: [], visualBlocks: [], scoreData: null }
 }
 
 function hydrateAgent(raw: Agent): Agent {
@@ -580,6 +659,94 @@ async function applyScript() {
   }
 }
 
+// ─── Whiteboard (append-mode visual blocks) ──────────────────────────────────
+
+const VISUAL_START = '<@@@VISUAL@@@>'
+const VISUAL_END = '<@@@VISUAL_END@@@>'
+const SCORE_START = '<@@@SCORE@@@>'
+const SCORE_END = '<@@@SCORE_END@@@>'
+
+const visualStreaming = ref(false)
+const visualPanelOpen = ref(true)
+
+// Computed accessors into active session
+const visualBlocks = computed<VisualBlock[]>({
+  get: () => activeSession.value?.visualBlocks ?? [],
+  set: (val) => { if (activeSession.value) activeSession.value.visualBlocks = val },
+})
+
+const scoreData = computed<ScoreData | null>({
+  get: () => activeSession.value?.scoreData ?? null,
+  set: (val) => { if (activeSession.value) activeSession.value.scoreData = val },
+})
+
+// Visual block tracking is now scoped per sendMessage call via visualCtx
+
+/**
+ * Called each streaming tick — appends or updates the in-progress block.
+ */
+function updateVisualFromStream(raw: string, ctx: { blockId: string | null }) {
+  const session = activeSession.value
+  if (!session) return
+
+  // ── Visual blocks ──
+  const lastVisualStart = raw.lastIndexOf(VISUAL_START)
+  if (lastVisualStart !== -1) {
+    const afterStart = raw.slice(lastVisualStart + VISUAL_START.length)
+    const endIdx = afterStart.indexOf(VISUAL_END)
+    const html = endIdx === -1 ? afterStart.trim() : afterStart.slice(0, endIdx).trim()
+    const complete = endIdx !== -1
+
+    if (ctx.blockId) {
+      // Update the single in-progress block for this response
+      const block = session.visualBlocks.find(b => b.id === ctx.blockId)
+      if (block) {
+        block.html = html
+        block.complete = complete
+        const labelMatch = html.match(/data-label="([^"]*)"/)
+        if (labelMatch?.[1]) block.label = labelMatch[1]
+      }
+    } else {
+      // First VISUAL block in this response — push exactly once
+      const labelMatch = html.match(/data-label="([^"]*)"/)
+      const label = labelMatch?.[1] ?? `Note ${session.visualBlocks.length + 1}`
+      ctx.blockId = crypto.randomUUID()
+      session.visualBlocks.push({ id: ctx.blockId, html, label, createdAt: Date.now(), complete })
+      visualPanelOpen.value = true
+    }
+    visualStreaming.value = !complete
+  }
+
+  // ── Score panel ──
+  const lastScoreStart = raw.lastIndexOf(SCORE_START)
+  if (lastScoreStart !== -1) {
+    const afterStart = raw.slice(lastScoreStart + SCORE_START.length)
+    const endIdx = afterStart.indexOf(SCORE_END)
+    const html = endIdx === -1 ? afterStart.trim() : afterStart.slice(0, endIdx).trim()
+    const complete = endIdx !== -1
+    session.scoreData = { html, complete }
+  }
+}
+
+/**
+ * Strip all visual and score blocks from text before rendering in chat bubble.
+ */
+function stripVisualBlocks(raw: string): string {
+  // Strip confetti token too
+  raw = raw.replace(/<@@@CONFETTI@@@>/g, '')
+  let result = raw
+  for (const [START, END] of [[VISUAL_START, VISUAL_END], [SCORE_START, SCORE_END]]) {
+    while (result.includes(START)) {
+      const s = result.indexOf(START)
+      const e = result.indexOf(END, s)
+      if (e === -1) { result = result.slice(0, s).trimEnd(); break }
+      result = (result.slice(0, s).trimEnd() + '\n\n' + result.slice(e + END.length).trimStart()).trim()
+    }
+  }
+  return result.trim()
+}
+
+
 // ─── Interactive form parsing ─────────────────────────────────────────────────
 
 const FORM_START = '<@@@START@@@>'
@@ -671,9 +838,16 @@ function stripFormBlock(raw: string): string {
 /**
  * Handle form submission — read the selected/entered value and send it as a user message.
  */
+const _formSubmitting = ref(false)
+
 function handleFormSubmit(event: Event) {
   event.preventDefault()
   event.stopPropagation()
+
+  // Guard against double-click / double-fire (broken mouse, touch, etc.)
+  if (_formSubmitting.value) return
+  _formSubmitting.value = true
+  setTimeout(() => { _formSubmitting.value = false }, 600)
 
   const form = event.target as HTMLFormElement
   const submitter = (event as SubmitEvent).submitter as HTMLButtonElement | null
@@ -723,6 +897,23 @@ function handleFormSubmit(event: Event) {
 
 const input = ref('')
 const status = ref<'idle' | 'submitted' | 'streaming' | 'ready'>('ready')
+const showConfetti = ref(false)
+const confettiParticles = ref<{ id: number; x: number; color: string; delay: number; duration: number; rotate: number; size: number }[]>([])
+
+function triggerConfetti() {
+  const colors = ['#6366f1', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', '#3b82f6', '#f97316']
+  confettiParticles.value = Array.from({ length: 60 }, (_, i) => ({
+    id: i,
+    x: Math.random() * 100,
+    color: colors[Math.floor(Math.random() * colors.length)],
+    delay: Math.random() * 0.6,
+    duration: 1.8 + Math.random() * 1.2,
+    rotate: Math.random() * 720 - 360,
+    size: 6 + Math.random() * 8,
+  }))
+  showConfetti.value = true
+  setTimeout(() => { showConfetti.value = false }, 3500)
+}
 const buildingForm = ref(false)  // true from when START token seen until pendingForm is set
 const expandedThinking = ref<Set<string>>(new Set())
 const expandedTimestamps = ref<Set<string>>(new Set())
@@ -736,6 +927,11 @@ function formatMessageTime(ts: number | undefined): string {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true })
 }
 const messagesEndRef = ref<HTMLDivElement | null>(null)
+const whiteboardEndRef = ref<HTMLDivElement | null>(null)
+
+function scrollWhiteboardToBottom() {
+  nextTick(() => whiteboardEndRef.value?.scrollIntoView({ behavior: 'smooth', block: 'end' }))
+}
 const scriptPanelOpen = ref(true)
 const sessionPanelOpen = ref(true)
 
@@ -747,9 +943,14 @@ function scrollToBottom(behavior: ScrollBehavior = 'smooth') {
 }
 
 watch(messages, () => scrollToBottom(), { deep: true })
+watch(
+  () => activeSession.value?.visualBlocks?.length,
+  () => scrollWhiteboardToBottom()
+)
 watch([activeAgentId, () => activeAgent.value?.activeSessionId], () => {
   nextTick(() => scrollToBottom('instant'))
-  // Don't clear pendingForm here — it lives on the session and restores automatically
+  // Reset streaming state on switch — blocks/score/pendingForm restore from session automatically
+  visualStreaming.value = false
 })
 
 watch(
@@ -812,6 +1013,8 @@ async function sendMessage() {
 
     const reader = response.body.getReader()
     const decoder = new TextDecoder()
+    // Per-response context — blockId is null until first VISUAL block arrives
+    const visualCtx = { blockId: null as string | null }
 
     while (true) {
       const { done, value } = await reader.read()
@@ -826,8 +1029,13 @@ async function sendMessage() {
             const p = msg.parts.find(p => p.type === 'text')
             if (p) {
               p.text += json.message.content
-              // Track when form block starts building so we can show indicator until it renders
               if (p.text.includes(FORM_START)) buildingForm.value = true
+              if (p.text.includes(VISUAL_START) || p.text.includes(SCORE_START)) {
+                updateVisualFromStream(p.text, visualCtx)
+              }
+              if (p.text.includes('<@@@CONFETTI@@@>') && !showConfetti.value) {
+                triggerConfetti()
+              }
             }
           }
         } catch {}
@@ -835,9 +1043,9 @@ async function sendMessage() {
     }
 
     expandedThinking.value.delete(assistantId)
+    visualStreaming.value = false
     detectPendingForm()   // sets pendingForm on the session
     // Wait for Vue to flush pendingForm into the DOM before hiding the building indicator
-    // so there is zero gap between the loader and the form card appearing
     await nextTick()
     buildingForm.value = false
   } catch (err) {
@@ -860,13 +1068,13 @@ function handleSubmit(event: Event) {
 // ─── Markdown rendering ───────────────────────────────────────────────────────
 
 function renderMarkdown(raw: string): string {
-  return md.render(stripFormBlock(raw))
+  // Strip both form blocks and visual blocks before rendering in chat
+  return md.render(stripFormBlock(stripVisualBlocks(raw)))
 }
 
 /**
  * Returns true if the rendered output has visible text content.
  * Used to decide whether to show the streaming indicator vs the prose div.
- * Handles the case where text is non-empty but entirely consumed by a form block.
  */
 function visibleText(raw: string): boolean {
   return !!renderMarkdown(raw).replace(/<[^>]*>/g, '').trim()
@@ -953,15 +1161,24 @@ const vFocus = { mounted: (el: HTMLElement) => nextTick(() => el.focus()) }
 <template>
   <UDashboardPanel id="chat-panel">
     <template #header>
-      <UDashboardNavbar title="Agent Studio">
+      <UDashboardNavbar title="Chat">
         <template #leading>
           <UDashboardSidebarCollapse />
         </template>
         <template #trailing>
           <div class="flex items-center gap-1">
             <UButton icon="i-lucide-square-pen" variant="ghost" color="neutral" size="sm" title="New chat" @click="createSession" />
-            <UButton :icon="sessionPanelOpen ? 'i-lucide-panel-left-close' : 'i-lucide-panel-left-open'" variant="ghost" color="neutral" size="sm" @click="sessionPanelOpen = !sessionPanelOpen" />
-            <UButton :icon="scriptPanelOpen ? 'i-lucide-panel-right-close' : 'i-lucide-panel-right-open'" variant="ghost" color="neutral" size="sm" @click="scriptPanelOpen = !scriptPanelOpen" />
+            <UButton :icon="sessionPanelOpen ? 'i-lucide-panel-left-close' : 'i-lucide-panel-left-open'" variant="ghost" color="neutral" size="sm" title="Toggle agents" @click="sessionPanelOpen = !sessionPanelOpen" />
+            <UButton
+              :icon="scriptPanelOpen ? 'i-lucide-x' : 'i-lucide-code-xml'"
+              :label="scriptPanelOpen ? '' : 'Script Editor'"
+              :trailing-icon="scriptPanelOpen ? undefined : 'i-lucide-chevron-right'"
+              variant="soft"
+              color="neutral"
+              size="sm"
+              class="font-medium"
+              @click="scriptPanelOpen = !scriptPanelOpen"
+            />
           </div>
         </template>
       </UDashboardNavbar>
@@ -1018,7 +1235,7 @@ const vFocus = { mounted: (el: HTMLElement) => nextTick(() => el.focus()) }
                 </div>
                 <UButton icon="i-lucide-plus" size="xs" variant="ghost" color="neutral" :disabled="!activeAgent" @click="createSession" />
               </div>
-              <div class="flex-1 overflow-y-auto pb-2 space-y-0.5 px-2">
+              <div class="flex-1 overflow-y-auto nice-scroll pb-2 space-y-0.5 px-2">
                 <template v-if="activeAgent">
                   <button
                     v-for="session in activeAgent.sessions" :key="session.id"
@@ -1039,251 +1256,363 @@ const vFocus = { mounted: (el: HTMLElement) => nextTick(() => el.focus()) }
           </div>
         </Transition>
 
-        <!-- ═══ CHAT AREA ═══ -->
-        <div class="flex flex-col flex-1 min-w-0 h-full min-h-0 px-4 py-4 gap-3">
+        <!-- ═══ CENTER — Split: Chat (left) + Visual Aid (right) ═══ -->
+        <div class="flex flex-1 min-w-0 h-full min-h-0">
 
-          <!-- Messages -->
-          <div class="flex flex-col gap-3 flex-1 overflow-y-auto scroll-smooth px-1 min-h-0">
-            <div v-if="agentsLoading" class="flex-1 flex items-center justify-center">
-              <UIcon name="i-lucide-loader" class="w-6 h-6 animate-spin text-gray-400" />
-            </div>
-            <div v-else-if="!activeAgent" class="flex-1 flex flex-col items-center justify-center gap-2 text-gray-400 dark:text-gray-600 select-none">
-              <UIcon name="i-lucide-bot" class="w-10 h-10 opacity-30" />
-              <p class="text-sm">No agents yet — create one to start</p>
-            </div>
-            <div v-else-if="messages.length === 0" class="flex-1 flex flex-col items-center justify-center gap-2 text-gray-400 dark:text-gray-600 select-none">
-              <div class="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                <span class="text-xl font-bold text-primary">{{ activeAgent.name.charAt(0) }}</span>
+          <!-- ── Chat column ── -->
+          <div class="flex flex-col flex-1 min-w-0 h-full min-h-0 px-4 py-4 gap-3 border-r border-neutral-200 dark:border-neutral-800">
+
+            <!-- Messages -->
+            <div class="flex flex-col gap-3 flex-1 overflow-y-auto nice-scroll scroll-smooth px-1 min-h-0">
+              <div v-if="agentsLoading" class="flex-1 flex items-center justify-center">
+                <UIcon name="i-lucide-loader" class="w-6 h-6 animate-spin text-neutral-400" />
               </div>
-              <p class="text-sm font-semibold text-gray-600 dark:text-gray-400">{{ activeAgent.name }}</p>
-              <p class="text-xs opacity-50 font-mono">{{ activeAgent.model }}</p>
-            </div>
-
-            <template v-for="msg in messages" :key="msg.id">
-              <div v-if="msg.role === 'system-notice'" class="flex items-center gap-2 py-1">
-                <div class="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
-                <span class="flex items-center gap-1.5 text-[11px] text-gray-400 dark:text-gray-500 px-2.5 py-1 rounded-full bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 whitespace-nowrap">
-                  <UIcon name="i-lucide-refresh-cw" class="w-2.5 h-2.5" />{{ msg.parts[0].text }}
-                </span>
-                <div class="flex-1 h-px bg-gray-200 dark:bg-gray-700" />
+              <div v-else-if="!activeAgent" class="flex-1 flex flex-col items-center justify-center gap-2 text-neutral-400 dark:text-neutral-600 select-none">
+                <UIcon name="i-lucide-bot" class="w-10 h-10 opacity-30" />
+                <p class="text-sm">No agents yet — create one to start</p>
               </div>
-
-              <div v-else class="flex gap-3" :class="msg.role === 'user' ? 'justify-end' : 'justify-start'">
-                <div class="flex flex-col gap-1 max-w-[82%]" :class="msg.role === 'user' ? 'items-end' : 'items-start'" @click="toggleTimestamp(msg.id)">
-                  <template v-if="msg.role === 'assistant'">
-                    <div v-for="part in msg.parts.filter(p => p.type === 'thinking')" :key="'th-' + msg.id" class="w-full">
-                      <button v-if="part.text" class="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors" @click="toggleThinking(msg.id)">
-                        <UIcon name="i-lucide-brain" class="w-3.5 h-3.5" :class="{ 'animate-pulse': status === 'streaming' && expandedThinking.has(msg.id) }" />
-                        <span>{{ expandedThinking.has(msg.id) ? 'Hide' : 'Show' }} thinking</span>
-                        <UIcon :name="expandedThinking.has(msg.id) ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'" class="w-3 h-3" />
-                      </button>
-                      <div v-else-if="status === 'streaming'" class="flex items-center gap-1.5 text-xs text-gray-400 animate-pulse">
-                        <UIcon name="i-lucide-brain" class="w-3.5 h-3.5" /><span>Thinking...</span>
-                      </div>
-                      <div v-if="expandedThinking.has(msg.id) && part.text" class="mt-1.5 p-3 rounded-lg bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400 whitespace-pre-wrap font-mono max-h-48 overflow-y-auto">{{ part.text }}</div>
-                    </div>
-                  </template>
-
-                  <div
-                    v-for="part in msg.parts.filter(p => p.type === 'text')" :key="'tx-' + msg.id"
-                    class="px-4 py-3 rounded-2xl text-sm leading-relaxed"
-                    :class="msg.role === 'user' ? 'bg-primary text-white rounded-br-sm' : 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-bl-sm'"
-                  >
-                    <span v-if="msg.role === 'user'" class="whitespace-pre-wrap">{{ part.text }}</span>
-                    <template v-else>
-                      <template v-if="visibleText(part.text)">
-                        <div
-                          class="prose prose-sm dark:prose-invert max-w-none
-                            prose-p:my-1.5 prose-p:leading-relaxed prose-headings:font-semibold prose-headings:mt-4 prose-headings:mb-2
-                            prose-h1:text-base prose-h2:text-sm prose-h3:text-sm prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0.5
-                            prose-code:bg-gray-800 prose-code:text-emerald-400 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-xs prose-code:font-mono prose-code:before:content-none prose-code:after:content-none
-                            prose-pre:bg-gray-900 prose-pre:border prose-pre:border-gray-700 dark:prose-pre:bg-gray-950 dark:prose-pre:border-gray-700 prose-pre:text-gray-100 prose-pre:rounded-xl prose-pre:p-4 prose-pre:overflow-x-auto prose-pre:text-[11px] prose-pre:leading-relaxed prose-pre:my-3 prose-pre:shadow-lg
-                            [&_pre_code]:bg-transparent [&_pre_code]:text-gray-100 [&_pre_code]:p-0 [&_pre_code]:text-[11px]
-                            prose-blockquote:border-l-2 prose-blockquote:border-primary/50 prose-blockquote:pl-3 prose-blockquote:italic prose-blockquote:text-gray-500 prose-blockquote:my-2
-                            prose-a:text-primary prose-a:no-underline hover:prose-a:underline prose-strong:font-semibold
-                            prose-hr:border-gray-200 dark:prose-hr:border-gray-700 prose-hr:my-3
-                            prose-table:text-xs prose-th:bg-gray-200 dark:prose-th:bg-gray-700 prose-th:px-3 prose-th:py-1.5 prose-td:px-3 prose-td:py-1.5"
-                          v-html="renderMarkdown(part.text)"
-                        />
-                      </template>
-                      <!-- Submitted (waiting for first token) -->
-                      <span v-else-if="status === 'submitted'" class="inline-flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500 animate-pulse">
-                        <UIcon name="i-lucide-loader" class="w-3.5 h-3.5 animate-spin" />
-                        <span>Thinking…</span>
-                      </span>
-                      <!-- Streaming but text hidden behind form block -->
-                      <span v-else-if="status === 'streaming' && !visibleText(part.text)" class="inline-flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500">
-                        <span class="inline-flex gap-1 items-center">
-                          <span class="w-1.5 h-1.5 bg-current rounded-full animate-bounce [animation-delay:0ms]" />
-                          <span class="w-1.5 h-1.5 bg-current rounded-full animate-bounce [animation-delay:150ms]" />
-                          <span class="w-1.5 h-1.5 bg-current rounded-full animate-bounce [animation-delay:300ms]" />
-                        </span>
-                        <span v-if="part.text.includes('<@@@START@@@>')" class="animate-pulse">Preparing question…</span>
-                      </span>
-                    </template>
-                  </div>
-                  <!-- Timestamp — visible when message is clicked -->
-                  <Transition enter-active-class="transition-all duration-150 ease-out" enter-from-class="opacity-0 -translate-y-1" enter-to-class="opacity-100 translate-y-0" leave-active-class="transition-all duration-100 ease-in" leave-from-class="opacity-100" leave-to-class="opacity-0">
-                    <span v-if="expandedTimestamps.has(msg.id) && msg.createdAt" class="text-[10px] text-gray-400 dark:text-gray-500 px-1 select-none">
-                      {{ formatMessageTime(msg.createdAt) }}
-                    </span>
-                  </Transition>
+              <div v-else-if="messages.length === 0" class="flex-1 flex flex-col items-center justify-center gap-2 text-neutral-400 dark:text-neutral-600 select-none">
+                <div class="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                  <span class="text-xl font-bold text-primary">{{ activeAgent.name.charAt(0) }}</span>
                 </div>
+                <p class="text-sm font-semibold text-neutral-600 dark:text-neutral-400">{{ activeAgent.name }}</p>
+                <p class="text-xs opacity-50 font-mono">{{ activeAgent.model }}</p>
               </div>
-            </template>
-            <div ref="messagesEndRef" class="h-1 shrink-0" />
+
+              <template v-for="msg in messages" :key="msg.id">
+                <div v-if="msg.role === 'system-notice'" class="flex items-center gap-2 py-1">
+                  <div class="flex-1 h-px bg-neutral-200 dark:bg-neutral-700" />
+                  <span class="flex items-center gap-1.5 text-[11px] text-neutral-400 dark:text-neutral-500 px-2.5 py-1 rounded-full bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 whitespace-nowrap">
+                    <UIcon name="i-lucide-refresh-cw" class="w-2.5 h-2.5" />{{ msg.parts[0].text }}
+                  </span>
+                  <div class="flex-1 h-px bg-neutral-200 dark:bg-neutral-700" />
+                </div>
+
+                <div v-else class="flex gap-3" :class="msg.role === 'user' ? 'justify-end' : 'justify-start'">
+                  <div class="flex flex-col gap-1 max-w-[85%]" :class="msg.role === 'user' ? 'items-end' : 'items-start'" @click="toggleTimestamp(msg.id)">
+                    <template v-if="msg.role === 'assistant'">
+                      <div v-for="part in msg.parts.filter(p => p.type === 'thinking')" :key="'th-' + msg.id" class="w-full">
+                        <button v-if="part.text" class="flex items-center gap-1.5 text-xs text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-300 transition-colors" @click="toggleThinking(msg.id)">
+                          <UIcon name="i-lucide-brain" class="w-3.5 h-3.5" :class="{ 'animate-pulse': status === 'streaming' && expandedThinking.has(msg.id) }" />
+                          <span>{{ expandedThinking.has(msg.id) ? 'Hide' : 'Show' }} thinking</span>
+                          <UIcon :name="expandedThinking.has(msg.id) ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'" class="w-3 h-3" />
+                        </button>
+                        <div v-else-if="status === 'streaming'" class="flex items-center gap-1.5 text-xs text-neutral-400 animate-pulse">
+                          <UIcon name="i-lucide-brain" class="w-3.5 h-3.5" /><span>Thinking...</span>
+                        </div>
+                        <div v-if="expandedThinking.has(msg.id) && part.text" class="mt-1.5 p-3 rounded-lg bg-neutral-50 dark:bg-neutral-800/50 border border-neutral-200 dark:border-neutral-700 text-xs text-neutral-500 dark:text-neutral-400 whitespace-pre-wrap font-mono max-h-48 overflow-y-auto">{{ part.text }}</div>
+                      </div>
+                    </template>
+
+                    <div
+                      v-for="part in msg.parts.filter(p => p.type === 'text')" :key="'tx-' + msg.id"
+                      class="px-4 py-3 rounded-2xl text-sm leading-relaxed"
+                      :class="msg.role === 'user' ? 'bg-primary text-white rounded-br-sm' : 'bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-bl-sm'"
+                    >
+                      <span v-if="msg.role === 'user'" class="whitespace-pre-wrap">{{ part.text }}</span>
+                      <template v-else>
+                        <template v-if="visibleText(part.text)">
+                          <div
+                            class="prose prose-sm dark:prose-invert max-w-none
+                              prose-p:my-1.5 prose-p:leading-relaxed prose-headings:font-semibold prose-headings:mt-4 prose-headings:mb-2
+                              prose-h1:text-base prose-h2:text-sm prose-h3:text-sm prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0.5
+                              prose-code:bg-neutral-800 prose-code:text-emerald-400 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-xs prose-code:font-mono prose-code:before:content-none prose-code:after:content-none
+                              prose-pre:bg-neutral-900 prose-pre:border prose-pre:border-neutral-700 dark:prose-pre:bg-neutral-950 dark:prose-pre:border-neutral-700 prose-pre:text-neutral-100 prose-pre:rounded-xl prose-pre:p-4 prose-pre:overflow-x-auto prose-pre:text-[11px] prose-pre:leading-relaxed prose-pre:my-3 prose-pre:shadow-lg
+                              [&_pre_code]:bg-transparent [&_pre_code]:text-neutral-100 [&_pre_code]:p-0 [&_pre_code]:text-[11px]
+                              prose-blockquote:border-l-2 prose-blockquote:border-primary/50 prose-blockquote:pl-3 prose-blockquote:italic prose-blockquote:text-neutral-500 prose-blockquote:my-2
+                              prose-a:text-primary prose-a:no-underline hover:prose-a:underline prose-strong:font-semibold
+                              prose-hr:border-neutral-200 dark:prose-hr:border-neutral-700 prose-hr:my-3
+                              prose-table:text-xs prose-th:bg-neutral-200 dark:prose-th:bg-neutral-700 prose-th:px-3 prose-th:py-1.5 prose-td:px-3 prose-td:py-1.5"
+                            v-html="renderMarkdown(part.text)"
+                          />
+                        </template>
+                        <span v-else-if="status === 'submitted'" class="inline-flex items-center gap-2 text-xs text-neutral-400 dark:text-neutral-500 animate-pulse">
+                          <UIcon name="i-lucide-loader" class="w-3.5 h-3.5 animate-spin" />
+                          <span>Thinking…</span>
+                        </span>
+                        <span v-else-if="status === 'streaming' && !visibleText(part.text)" class="inline-flex items-center gap-2 text-xs text-neutral-400 dark:text-neutral-500">
+                          <span class="inline-flex gap-1 items-center">
+                            <span class="w-1.5 h-1.5 bg-current rounded-full animate-bounce [animation-delay:0ms]" />
+                            <span class="w-1.5 h-1.5 bg-current rounded-full animate-bounce [animation-delay:150ms]" />
+                            <span class="w-1.5 h-1.5 bg-current rounded-full animate-bounce [animation-delay:300ms]" />
+                          </span>
+                          <span v-if="part.text.includes('<@@@START@@@>') || part.text.includes('<@@@VISUAL@@@>')" class="animate-pulse">Preparing…</span>
+                        </span>
+                      </template>
+                    </div>
+                    <!-- Timestamp -->
+                    <Transition enter-active-class="transition-all duration-150 ease-out" enter-from-class="opacity-0 -translate-y-1" enter-to-class="opacity-100 translate-y-0" leave-active-class="transition-all duration-100 ease-in" leave-from-class="opacity-100" leave-to-class="opacity-0">
+                      <span v-if="expandedTimestamps.has(msg.id) && msg.createdAt" class="text-[10px] text-neutral-400 dark:text-neutral-500 px-1 select-none">
+                        {{ formatMessageTime(msg.createdAt) }}
+                      </span>
+                    </Transition>
+                  </div>
+                </div>
+              </template>
+              <div ref="messagesEndRef" class="h-1 shrink-0" />
+            </div>
+
+            <!-- Building form indicator -->
+            <Transition enter-active-class="transition-all duration-200 ease-out" enter-from-class="opacity-0 translate-y-1" enter-to-class="opacity-100 translate-y-0" leave-active-class="transition-all duration-150 ease-in" leave-from-class="opacity-100 translate-y-0" leave-to-class="opacity-0 translate-y-1">
+              <div v-if="buildingForm && !pendingForm" class="shrink-0 rounded-xl border border-dashed border-primary/30 bg-primary/5 dark:bg-primary/10 px-4 py-3 flex items-center gap-2.5">
+                <span class="inline-flex gap-1 items-center shrink-0">
+                  <span class="w-1.5 h-1.5 bg-primary/50 rounded-full animate-bounce [animation-delay:0ms]" />
+                  <span class="w-1.5 h-1.5 bg-primary/50 rounded-full animate-bounce [animation-delay:150ms]" />
+                  <span class="w-1.5 h-1.5 bg-primary/50 rounded-full animate-bounce [animation-delay:300ms]" />
+                </span>
+                <span class="text-xs text-primary/60 animate-pulse">Building question…</span>
+              </div>
+            </Transition>
+
+            <!-- Interactive form -->
+            <Transition enter-active-class="transition-all duration-200 ease-out" enter-from-class="opacity-0 translate-y-1" enter-to-class="opacity-100 translate-y-0" leave-active-class="transition-all duration-150 ease-in" leave-from-class="opacity-100 translate-y-0" leave-to-class="opacity-0 translate-y-1">
+              <div v-if="pendingForm" class="shrink-0 rounded-xl border border-primary/25 bg-primary/5 dark:bg-primary/10 px-4 py-3">
+                <div class="flex items-center justify-between mb-2.5 select-none">
+                  <p class="text-xs font-medium text-primary/70 flex items-center gap-1.5">
+                    <UIcon name="i-lucide-list-checks" class="w-3.5 h-3.5" />
+                    {{ pendingForm.question }}
+                  </p>
+                  <span v-if="activeSession?.pendingForms?.length > 1" class="text-[10px] text-primary/50 font-medium tabular-nums shrink-0 ml-3">
+                    {{ (activeSession.pendingForms.findIndex(f => f.html === pendingForm!.html) + 1) }} / {{ activeSession.pendingForms.length }}
+                  </span>
+                </div>
+                <!-- eslint-disable-next-line vue/no-v-html -->
+                <div v-html="pendingForm.html" @submit.prevent="handleFormSubmit" />
+              </div>
+            </Transition>
+
+            <!-- Input bar -->
+            <UChatPrompt
+              v-model="input"
+              variant="soft"
+              :placeholder="activeAgent ? `Message ${activeAgent.name}...` : 'Select an agent to start'"
+              :disabled="status === 'streaming' || !activeAgent"
+              @submit="handleSubmit"
+            />
           </div>
 
-          <!-- ── Interactive form area ── -->
-          <!-- Building indicator: shown while streaming and a form block is being constructed -->
-          <Transition
-            enter-active-class="transition-all duration-200 ease-out"
-            enter-from-class="opacity-0 translate-y-1"
-            enter-to-class="opacity-100 translate-y-0"
-            leave-active-class="transition-all duration-150 ease-in"
-            leave-from-class="opacity-100 translate-y-0"
-            leave-to-class="opacity-0 translate-y-1"
-          >
-            <div
-              v-if="buildingForm && !pendingForm"
-              class="shrink-0 rounded-xl border border-dashed border-primary/30 bg-primary/5 dark:bg-primary/10 px-4 py-3 flex items-center gap-2.5"
-            >
-              <span class="inline-flex gap-1 items-center shrink-0">
-                <span class="w-1.5 h-1.5 bg-primary/50 rounded-full animate-bounce [animation-delay:0ms]" />
-                <span class="w-1.5 h-1.5 bg-primary/50 rounded-full animate-bounce [animation-delay:150ms]" />
-                <span class="w-1.5 h-1.5 bg-primary/50 rounded-full animate-bounce [animation-delay:300ms]" />
-              </span>
-              <span class="text-xs text-primary/60 animate-pulse">Building question…</span>
-            </div>
-          </Transition>
+          <!-- ── Whiteboard + Score (right column) ── -->
+          <div class="flex flex-col w-1/2 shrink-0 h-full min-h-0 bg-white dark:bg-neutral-950">
 
-          <Transition
-            enter-active-class="transition-all duration-200 ease-out"
-            enter-from-class="opacity-0 translate-y-1"
-            enter-to-class="opacity-100 translate-y-0"
-            leave-active-class="transition-all duration-150 ease-in"
-            leave-from-class="opacity-100 translate-y-0"
-            leave-to-class="opacity-0 translate-y-1"
-          >
-            <div v-if="pendingForm" class="shrink-0 rounded-xl border border-primary/25 bg-primary/5 dark:bg-primary/10 px-4 py-3">
-              <div class="flex items-center justify-between mb-2.5 select-none">
-                <p class="text-xs font-medium text-primary/70 flex items-center gap-1.5">
-                  <UIcon name="i-lucide-list-checks" class="w-3.5 h-3.5" />
-                  {{ pendingForm.question }}
-                </p>
-                <!-- Queue indicator: "Question 1 of 3" when multiple forms -->
-                <span
-                  v-if="activeSession?.pendingForms?.length > 1"
-                  class="text-[10px] text-primary/50 font-medium tabular-nums shrink-0 ml-3"
-                >
-                  {{ (activeSession.pendingForms.findIndex(f => f.html === pendingForm!.html) + 1) }} / {{ activeSession.pendingForms.length }}
+            <!-- Whiteboard header -->
+            <div class="flex items-center justify-between px-4 py-3 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
+              <div class="flex items-center gap-2">
+                <UIcon name="i-lucide-presentation" class="w-3.5 h-3.5 text-neutral-400" />
+                <span class="text-xs font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Whiteboard</span>
+                <span v-if="visualBlocks.length" class="text-[10px] text-neutral-400 tabular-nums">{{ visualBlocks.length }}</span>
+                <span v-if="visualStreaming" class="flex items-center gap-1 text-[10px] text-primary animate-pulse ml-1">
+                  <span class="w-1.5 h-1.5 bg-primary rounded-full animate-bounce" />
+                  Writing
                 </span>
               </div>
-              <!-- v-html is intentional: the AI returns trusted inline-styled HTML form markup -->
-              <!-- eslint-disable-next-line vue/no-v-html -->
-              <div v-html="pendingForm.html" @submit.prevent="handleFormSubmit" />
+              <div class="flex items-center gap-1">
+                <UButton
+                  v-if="visualBlocks.length"
+                  size="xs"
+                  variant="ghost"
+                  color="neutral"
+                  icon="i-lucide-trash-2"
+                  title="Clear whiteboard"
+                  @click="if (activeSession) { activeSession.visualBlocks = []; activeSession.scoreData = null }"
+                />
+                <UButton
+                  :icon="scriptPanelOpen ? 'i-lucide-x' : 'i-lucide-code-xml'"
+                  :label="scriptPanelOpen ? '' : 'Script'"
+                  size="xs"
+                  variant="soft"
+                  color="neutral"
+                  class="font-medium"
+                  @click="scriptPanelOpen = !scriptPanelOpen"
+                />
+              </div>
             </div>
-          </Transition>
 
-          <!-- Input bar -->
-          <UChatPrompt
-            v-model="input"
-            variant="soft"
-            :placeholder="activeAgent ? `Message ${activeAgent.name}...` : 'Select an agent to start'"
-            :disabled="status === 'streaming' || !activeAgent"
-            @submit="handleSubmit"
-          />
+            <!-- Score panel — only shown when AI emits score block -->
+            <Transition
+              enter-active-class="transition-all duration-300 ease-out"
+              enter-from-class="opacity-0 -translate-y-2"
+              enter-to-class="opacity-100 translate-y-0"
+              leave-active-class="transition-all duration-200 ease-in"
+              leave-from-class="opacity-100 translate-y-0"
+              leave-to-class="opacity-0 -translate-y-2"
+            >
+              <div v-if="scoreData" class="shrink-0 border-b border-neutral-200 dark:border-neutral-800 bg-neutral-50 dark:bg-neutral-900/60 px-4 py-3">
+                <div class="flex items-center gap-2 mb-2">
+                  <UIcon name="i-lucide-bar-chart-2" class="w-3.5 h-3.5 text-primary" />
+                  <span class="text-[10px] font-semibold text-neutral-500 dark:text-neutral-400 uppercase tracking-wider">Score</span>
+                  <span v-if="scoreData && !scoreData.complete" class="text-[9px] text-primary/60 animate-pulse">updating…</span>
+                </div>
+                <!-- eslint-disable-next-line vue/no-v-html -->
+                <div
+                  class="text-neutral-800 dark:text-neutral-200"
+                  v-html="scoreData?.html"
+                />
+              </div>
+            </Transition>
+
+            <!-- Whiteboard scrollable area — appended blocks -->
+            <div class="flex-1 overflow-y-auto nice-scroll">
+
+              <!-- Empty state -->
+              <div v-if="!visualBlocks.length" class="h-full flex flex-col items-center justify-center gap-4 text-center p-8 select-none">
+                <div class="w-16 h-16 rounded-2xl border-2 border-dashed border-neutral-200 dark:border-neutral-800 flex items-center justify-center">
+                  <UIcon name="i-lucide-presentation" class="w-7 h-7 text-neutral-300 dark:text-neutral-700" />
+                </div>
+                <div>
+                  <p class="text-sm font-medium text-neutral-500 dark:text-neutral-400">Whiteboard is empty</p>
+                  <p class="text-xs text-neutral-400 dark:text-neutral-600 mt-1 max-w-xs leading-relaxed">
+                    The AI will write diagrams, tables, code walkthroughs, and lesson notes here as you learn.
+                  </p>
+                </div>
+              </div>
+
+              <!-- Visual blocks — appended, scrollable, each is a card -->
+              <div v-else class="p-4 flex flex-col gap-3">
+                <div
+                  v-for="(block, idx) in visualBlocks"
+                  :key="block.id"
+                  class="rounded-xl border border-neutral-200 dark:border-neutral-800 overflow-hidden"
+                  :class="!block.complete ? 'border-primary/30 dark:border-primary/20' : ''"
+                >
+                  <!-- Block header -->
+                  <div class="flex items-center justify-between px-3 py-2 bg-neutral-50 dark:bg-neutral-800/60 border-b border-neutral-200 dark:border-neutral-800">
+                    <div class="flex items-center gap-2 min-w-0">
+                      <span class="text-[10px] font-mono text-neutral-400 shrink-0">#{{ idx + 1 }}</span>
+                      <span class="text-xs font-medium text-neutral-700 dark:text-neutral-300 truncate">{{ block.label }}</span>
+                    </div>
+                    <span v-if="!block.complete" class="text-[9px] text-primary/70 animate-pulse shrink-0 ml-2">writing…</span>
+                  </div>
+
+                  <!-- Block content -->
+                  <!-- eslint-disable-next-line vue/no-v-html -->
+                  <div
+                    class="p-4 text-neutral-800 dark:text-neutral-200 text-sm leading-relaxed
+                      [&_h1]:text-lg [&_h1]:font-bold [&_h1]:mb-2 [&_h1]:mt-0
+                      [&_h2]:text-base [&_h2]:font-semibold [&_h2]:mb-2 [&_h2]:mt-3 [&_h2]:first:mt-0
+                      [&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mb-1 [&_h3]:mt-2
+                      [&_p]:mb-2 [&_p]:leading-relaxed [&_p]:last:mb-0
+                      [&_ul]:mb-2 [&_ul]:pl-4 [&_ul]:list-disc [&_li]:mb-0.5
+                      [&_ol]:mb-2 [&_ol]:pl-4 [&_ol]:list-decimal
+                      [&_table]:w-full [&_table]:border-collapse [&_table]:mb-3 [&_table]:text-xs
+                      [&_th]:bg-neutral-100 [&_th]:dark:bg-neutral-800 [&_th]:px-3 [&_th]:py-1.5 [&_th]:text-left [&_th]:font-semibold [&_th]:border [&_th]:border-neutral-200 [&_th]:dark:border-neutral-700
+                      [&_td]:px-3 [&_td]:py-1.5 [&_td]:border [&_td]:border-neutral-200 [&_td]:dark:border-neutral-700
+                      [&_pre]:bg-neutral-900 [&_pre]:text-neutral-100 [&_pre]:p-3 [&_pre]:rounded-lg [&_pre]:overflow-x-auto [&_pre]:text-xs [&_pre]:leading-relaxed [&_pre]:my-2
+                      [&_code]:font-mono [&_code]:text-xs [&_code]:bg-neutral-100 [&_code]:dark:bg-neutral-800 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded
+                      [&_pre_code]:bg-transparent [&_pre_code]:p-0
+                      [&_hr]:border-neutral-200 [&_hr]:dark:border-neutral-800 [&_hr]:my-3
+                      [&_strong]:font-semibold [&_em]:italic
+                      [&_blockquote]:border-l-2 [&_blockquote]:border-primary/40 [&_blockquote]:pl-3 [&_blockquote]:italic [&_blockquote]:text-neutral-500 [&_blockquote]:my-2"
+                    v-html="block.html"
+                  />
+                </div>
+                <div ref="whiteboardEndRef" class="h-1 shrink-0" />
+              </div>
+            </div>
+          </div>
         </div>
 
-        <!-- ═══ RIGHT PANEL — Script Editor ═══ -->
-        <Transition enter-active-class="transition-all duration-250 ease-out" enter-from-class="opacity-0 translate-x-4" enter-to-class="opacity-100 translate-x-0" leave-active-class="transition-all duration-200 ease-in" leave-from-class="opacity-100 translate-x-0" leave-to-class="opacity-0 translate-x-4">
-          <div v-if="scriptPanelOpen && activeAgent" class="w-80 xl:w-96 shrink-0 border-l border-gray-200 dark:border-gray-800 flex flex-col h-full min-h-0 overflow-hidden">
-
-            <!-- Agent header -->
-            <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-800 shrink-0">
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-2.5 min-w-0">
-                  <div class="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-[10px] font-bold text-white shrink-0">{{ activeAgent.name.charAt(0) }}</div>
-                  <div class="min-w-0">
-                    <p class="text-sm font-semibold text-gray-800 dark:text-gray-200 truncate leading-tight">{{ activeAgent.name }}</p>
-                    <p class="text-[11px] text-gray-400 font-mono leading-tight">{{ activeAgent.model.split(':')[0] }}</p>
-                  </div>
-                </div>
-                <UButton icon="i-lucide-pencil" size="xs" variant="ghost" color="neutral" @click="openEditAgent(activeAgent)" />
-              </div>
-            </div>
-
-            <!-- File tabs — internal.md always shown first as locked -->
-            <div class="flex items-center border-b border-gray-200 dark:border-gray-800 shrink-0 overflow-x-auto">
-              <div class="flex items-center min-w-0 flex-1">
-
-                <!-- internal.md tab — selectable and editable like any other file -->
-                <button
-                  class="group relative flex items-center gap-1.5 px-3 py-2.5 text-xs border-r border-gray-200 dark:border-gray-800 shrink-0 transition-colors"
-                  :class="activeFileId === '__internal__' ? 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-medium' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'"
-                  @click="activeFileId = '__internal__'"
-                >
-                  <span v-if="activeFileId === '__internal__'" class="absolute top-0 left-0 right-0 h-0.5 bg-primary" />
-                  <UIcon name="i-lucide-shield" class="w-3 h-3 shrink-0 text-primary/60" />
-                  <span class="font-mono">internal.md</span>
-                </button>
-
-                <!-- Editable file tabs -->
-                <button
-                  v-for="file in editableFiles" :key="file.id"
-                  class="group relative flex items-center gap-1.5 px-3 py-2.5 text-xs border-r border-gray-200 dark:border-gray-800 shrink-0 transition-colors"
-                  :class="file.id === activeFileId ? 'bg-gray-100 dark:bg-gray-800 text-gray-900 dark:text-gray-100 font-medium' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'"
-                  @click="activeFileId = file.id" @dblclick="startRenaming(file)"
-                >
-                  <span v-if="file.id === activeFileId" class="absolute top-0 left-0 right-0 h-0.5 bg-primary" />
-                  <UIcon name="i-lucide-file-text" class="w-3 h-3 shrink-0" :class="file.isBootstrap ? 'text-primary' : 'opacity-50'" />
-                  <input v-if="editingFileId === file.id" v-model="editingFileName" v-focus class="bg-transparent outline-none w-20 font-mono text-xs" @blur="commitRename" @keydown.enter="commitRename" @keydown.escape="editingFileId = null" @click.stop />
-                  <span v-else class="max-w-[72px] truncate font-mono">{{ file.name }}</span>
-                  <span v-if="dirtyFiles.has(file.id)" class="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
-                  <span v-else-if="file.isBootstrap" class="text-[9px] text-primary/70 font-bold shrink-0">⚡</span>
-                  <button v-if="editableFiles.length > 1" class="opacity-0 group-hover:opacity-50 hover:!opacity-100 transition-opacity shrink-0" @click.stop="deleteFile(file.id)">
-                    <UIcon name="i-lucide-x" class="w-2.5 h-2.5" />
-                  </button>
-                </button>
-              </div>
-              <button class="px-2.5 py-2 text-gray-400 hover:text-primary hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors shrink-0" @click="addFile">
-                <UIcon name="i-lucide-plus" class="w-3.5 h-3.5" />
-              </button>
-            </div>
-
-            <!-- Apply toolbar -->
-            <div class="flex items-center justify-between px-3 py-2 border-b border-gray-200 dark:border-gray-800 shrink-0">
-              <span class="text-xs flex items-center gap-1.5">
-                <template v-if="!hasUnapplied">
-                  <UIcon name="i-lucide-check-circle" class="w-3.5 h-3.5 text-primary" /><span class="text-primary font-medium">Applied</span>
-                </template>
-                <template v-else>
-                  <UIcon name="i-lucide-alert-circle" class="w-3.5 h-3.5 text-amber-500" /><span class="text-amber-500">Unapplied changes</span>
-                </template>
-              </span>
-              <UButton size="xs" color="primary" variant="soft" :icon="hasUnapplied ? 'i-lucide-play' : 'i-lucide-check'" :label="hasUnapplied ? 'Apply All' : 'Applied'" :disabled="!hasUnapplied" @click="applyScript" />
-            </div>
-
-            <!-- Editor -->
-            <div class="flex-1 min-h-0 relative bg-white dark:bg-gray-950">
-              <textarea v-if="activeFile" v-model="activeFile.content" spellcheck="false" class="w-full h-full resize-none bg-white dark:bg-gray-950 text-gray-800 dark:text-gray-100 font-mono text-xs leading-relaxed p-4 focus:outline-none border-0 placeholder-gray-300 dark:placeholder-gray-600 selection:bg-primary/30" placeholder="# Write instructions here..." />
-              <div class="absolute bottom-2 right-3 text-gray-400 dark:text-gray-600 text-[10px] font-mono pointer-events-none select-none">{{ activeFile?.content.split('\n').length ?? 0 }}L</div>
-            </div>
-
-            <!-- Templates -->
-            <div class="border-t border-gray-200 dark:border-gray-800 px-3 py-2.5 shrink-0">
-              <p class="text-[10px] uppercase tracking-wider font-semibold text-gray-400 dark:text-gray-500 mb-2">Templates</p>
-              <div class="flex flex-wrap gap-1.5">
-                <button v-for="tpl in TEMPLATES" :key="tpl.label" class="px-2 py-0.5 text-[11px] rounded-md bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-primary/10 hover:text-primary transition-colors font-medium" @click="activeFile && (activeFile.content = tpl.content); activeFileId && dirtyFiles.add(activeFileId)">
-                  {{ tpl.label }}
-                </button>
-              </div>
-            </div>
-          </div>
-        </Transition>
       </div>
     </template>
   </UDashboardPanel>
+
+  <!-- ── Script Editor Drawer (slide-over from right) ── -->
+  <Transition
+    enter-active-class="transition-all duration-250 ease-out"
+    enter-from-class="opacity-0 translate-x-full"
+    enter-to-class="opacity-100 translate-x-0"
+    leave-active-class="transition-all duration-200 ease-in"
+    leave-from-class="opacity-100 translate-x-0"
+    leave-to-class="opacity-0 translate-x-full"
+  >
+    <div v-if="scriptPanelOpen && activeAgent" class="fixed right-0 top-0 bottom-0 z-40 w-80 xl:w-96 bg-white dark:bg-neutral-900 border-l border-neutral-200 dark:border-neutral-800 flex flex-col shadow-2xl">
+
+      <!-- Drawer header -->
+      <div class="px-4 py-3 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2.5 min-w-0">
+            <div class="w-6 h-6 rounded-full bg-primary flex items-center justify-center text-[10px] font-bold text-white shrink-0">{{ activeAgent.name.charAt(0) }}</div>
+            <div class="min-w-0">
+              <p class="text-sm font-semibold text-neutral-800 dark:text-neutral-200 truncate leading-tight">{{ activeAgent.name }}</p>
+              <p class="text-[11px] text-neutral-400 font-mono leading-tight">{{ activeAgent.model.split(':')[0] }}</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-1">
+            <UButton icon="i-lucide-pencil" size="xs" variant="ghost" color="neutral" @click="openEditAgent(activeAgent)" />
+            <UButton icon="i-lucide-x" size="xs" variant="ghost" color="neutral" @click="scriptPanelOpen = false" />
+          </div>
+        </div>
+      </div>
+
+      <!-- File tabs -->
+      <div class="flex items-center border-b border-neutral-200 dark:border-neutral-800 shrink-0 overflow-x-auto">
+        <div class="flex items-center min-w-0 flex-1">
+          <button
+            class="group relative flex items-center gap-1.5 px-3 py-2.5 text-xs border-r border-neutral-200 dark:border-neutral-800 shrink-0 transition-colors"
+            :class="activeFileId === '__internal__' ? 'bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 font-medium' : 'text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800'"
+            @click="activeFileId = '__internal__'"
+          >
+            <span v-if="activeFileId === '__internal__'" class="absolute top-0 left-0 right-0 h-0.5 bg-primary" />
+            <UIcon name="i-lucide-shield" class="w-3 h-3 shrink-0 text-primary/60" />
+            <span class="font-mono">internal.md</span>
+          </button>
+
+          <button
+            v-for="file in editableFiles" :key="file.id"
+            class="group relative flex items-center gap-1.5 px-3 py-2.5 text-xs border-r border-neutral-200 dark:border-neutral-800 shrink-0 transition-colors"
+            :class="file.id === activeFileId ? 'bg-neutral-100 dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 font-medium' : 'text-neutral-500 dark:text-neutral-400 hover:bg-neutral-100 dark:hover:bg-neutral-800'"
+            @click="activeFileId = file.id" @dblclick="startRenaming(file)"
+          >
+            <span v-if="file.id === activeFileId" class="absolute top-0 left-0 right-0 h-0.5 bg-primary" />
+            <UIcon name="i-lucide-file-text" class="w-3 h-3 shrink-0" :class="file.isBootstrap ? 'text-primary' : 'opacity-50'" />
+            <input v-if="editingFileId === file.id" v-model="editingFileName" v-focus class="bg-transparent outline-none w-20 font-mono text-xs" @blur="commitRename" @keydown.enter="commitRename" @keydown.escape="editingFileId = null" @click.stop />
+            <span v-else class="max-w-[72px] truncate font-mono">{{ file.name }}</span>
+            <span v-if="dirtyFiles.has(file.id)" class="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+            <span v-else-if="file.isBootstrap" class="text-[9px] text-primary/70 font-bold shrink-0">⚡</span>
+            <button v-if="editableFiles.length > 1" class="opacity-0 group-hover:opacity-50 hover:!opacity-100 transition-opacity shrink-0" @click.stop="deleteFile(file.id)">
+              <UIcon name="i-lucide-x" class="w-2.5 h-2.5" />
+            </button>
+          </button>
+        </div>
+        <button class="px-2.5 py-2 text-neutral-400 hover:text-primary hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors shrink-0" @click="addFile">
+          <UIcon name="i-lucide-plus" class="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      <!-- Apply toolbar -->
+      <div class="flex items-center justify-between px-3 py-2 border-b border-neutral-200 dark:border-neutral-800 shrink-0">
+        <span class="text-xs flex items-center gap-1.5">
+          <template v-if="!hasUnapplied">
+            <UIcon name="i-lucide-check-circle" class="w-3.5 h-3.5 text-primary" /><span class="text-primary font-medium">Applied</span>
+          </template>
+          <template v-else>
+            <UIcon name="i-lucide-alert-circle" class="w-3.5 h-3.5 text-amber-500" /><span class="text-amber-500">Unapplied changes</span>
+          </template>
+        </span>
+        <UButton size="xs" color="primary" variant="soft" :icon="hasUnapplied ? 'i-lucide-play' : 'i-lucide-check'" :label="hasUnapplied ? 'Apply All' : 'Applied'" :disabled="!hasUnapplied" @click="applyScript" />
+      </div>
+
+      <!-- Editor -->
+      <div class="flex-1 min-h-0 relative bg-white dark:bg-neutral-950">
+        <textarea v-if="activeFile" v-model="activeFile.content" spellcheck="false" class="w-full h-full resize-none bg-white dark:bg-neutral-950 text-neutral-800 dark:text-neutral-100 font-mono text-xs leading-relaxed p-4 focus:outline-none border-0 placeholder-neutral-300 dark:placeholder-neutral-600 selection:bg-primary/30" placeholder="# Write instructions here..." />
+        <div class="absolute bottom-2 right-3 text-neutral-400 dark:text-neutral-600 text-[10px] font-mono pointer-events-none select-none">{{ activeFile?.content.split('\n').length ?? 0 }}L</div>
+      </div>
+
+      <!-- Templates -->
+      <div class="border-t border-neutral-200 dark:border-neutral-800 px-3 py-2.5 shrink-0">
+        <p class="text-[10px] uppercase tracking-wider font-semibold text-neutral-400 dark:text-neutral-500 mb-2">Templates</p>
+        <div class="flex flex-wrap gap-1.5">
+          <button v-for="tpl in TEMPLATES" :key="tpl.label" class="px-2 py-0.5 text-[11px] rounded-md bg-neutral-100 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 hover:bg-primary/10 hover:text-primary transition-colors font-medium" @click="activeFile && (activeFile.content = tpl.content); activeFileId && dirtyFiles.add(activeFileId)">
+            {{ tpl.label }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </Transition>
+
+  <!-- Script drawer backdrop -->
+  <Transition enter-active-class="transition-opacity duration-250" enter-from-class="opacity-0" enter-to-class="opacity-100" leave-active-class="transition-opacity duration-200" leave-from-class="opacity-100" leave-to-class="opacity-0">
+    <div v-if="scriptPanelOpen && activeAgent" class="fixed inset-0 z-30 bg-black/20 dark:bg-black/40 backdrop-blur-sm" @click="scriptPanelOpen = false" />
+  </Transition>
 
   <!-- Agent Modal -->
   <UModal v-model:open="showAgentModal" :title="editingAgent ? `Edit — ${editingAgent.name}` : 'New Agent'" :ui="{ width: 'sm:max-w-md' }">
@@ -1330,4 +1659,60 @@ const vFocus = { mounted: (el: HTMLElement) => nextTick(() => el.focus()) }
       </button>
     </div>
   </Transition>
+
+  <!-- ── Confetti celebration overlay ── -->
+  <Transition
+    enter-active-class="transition-opacity duration-300"
+    enter-from-class="opacity-0"
+    enter-to-class="opacity-100"
+    leave-active-class="transition-opacity duration-700"
+    leave-from-class="opacity-100"
+    leave-to-class="opacity-0"
+  >
+    <div v-if="showConfetti" class="fixed inset-0 z-[100] pointer-events-none overflow-hidden">
+      <!-- Particles -->
+      <div
+        v-for="p in confettiParticles"
+        :key="p.id"
+        class="absolute top-0 rounded-sm"
+        :style="{
+          left: p.x + '%',
+          width: p.size + 'px',
+          height: p.size * 0.6 + 'px',
+          backgroundColor: p.color,
+          animationName: 'confetti-fall',
+          animationDuration: p.duration + 's',
+          animationDelay: p.delay + 's',
+          animationTimingFunction: 'cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+          animationFillMode: 'both',
+          transform: `rotate(${p.rotate}deg)`,
+          opacity: 0.9,
+        }"
+      />
+
+      <!-- Central burst message -->
+      <div class="absolute inset-0 flex flex-col items-center justify-start pt-24 pointer-events-none">
+        <div
+          class="px-8 py-5 rounded-2xl bg-white dark:bg-neutral-900 shadow-2xl border border-neutral-200 dark:border-neutral-700 text-center"
+          style="animation: confetti-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both"
+        >
+          <div class="text-4xl mb-2">🎉</div>
+          <p class="text-lg font-bold text-neutral-900 dark:text-neutral-100">Well done!</p>
+          <p class="text-sm text-neutral-500 dark:text-neutral-400 mt-0.5">Keep up the great work.</p>
+        </div>
+      </div>
+    </div>
+  </Transition>
 </template>
+
+<style>
+@keyframes confetti-fall {
+  0%   { transform: translateY(-20px) rotate(0deg); opacity: 1; }
+  80%  { opacity: 1; }
+  100% { transform: translateY(100vh) rotate(var(--r, 360deg)); opacity: 0; }
+}
+@keyframes confetti-pop {
+  0%   { opacity: 0; transform: scale(0.5); }
+  100% { opacity: 1; transform: scale(1); }
+}
+</style>
