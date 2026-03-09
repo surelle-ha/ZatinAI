@@ -13,7 +13,7 @@ const saving = ref(false)
 const modalError = ref<string | null>(null)
 const showToken = ref(false)
 
-const OLLAMA_DEFAULT_HOST = 'http://localhost:11434'
+const OLLAMA_DEFAULT_HOST = 'https://ollama.com'
 
 const form = ref({
   label: '',

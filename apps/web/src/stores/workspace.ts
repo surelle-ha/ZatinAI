@@ -28,10 +28,16 @@ export const useWorkspaceStore = defineStore('workspace', {
   }),
 
   getters: {
-    activeWorkspace: (state): Workspace | null =>
-      state.workspaces.find(w => w.id === state.activeWorkspaceId) ?? null,
+    activeWorkspace: (state): Workspace | null => {
+      // Guard: ensure workspaces is always an array
+      if (!Array.isArray(state.workspaces)) return null
+      return state.workspaces.find(w => w.id === state.activeWorkspaceId) ?? null
+    },
 
-    hasWorkspace: (state): boolean => state.workspaces.length > 0,
+    hasWorkspace: (state): boolean => {
+      if (!Array.isArray(state.workspaces)) return false
+      return state.workspaces.length > 0
+    },
   },
 
   actions: {
@@ -42,6 +48,10 @@ export const useWorkspaceStore = defineStore('workspace', {
     async fetchWorkspaces(): Promise<void> {
       const sessionStore = useSessionStore()
       if (!sessionStore.accessToken) return
+
+      if (!Array.isArray(this.workspaces)) {
+        this.workspaces = []
+      }
 
       this.loading = true
       try {
@@ -54,6 +64,7 @@ export const useWorkspaceStore = defineStore('workspace', {
             },
           }
         )
+        console.log('workspaces response:', workspaces, typeof workspaces)
 
         this.workspaces = workspaces
 
