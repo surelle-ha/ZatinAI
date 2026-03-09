@@ -131,6 +131,6 @@ SUPERVISORD
 
 ENV NODE_ENV=production
 
-EXPOSE 3000 4000
+EXPOSE 3000 9876
 
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/conf.d/tetragram.conf"]
