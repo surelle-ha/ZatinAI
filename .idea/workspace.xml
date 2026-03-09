@@ -4,10 +4,8 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="640a392c-be1b-4348-bda6-07f04ef48839" name="Changes" comment="fix(na): dockerfile">
+    <list default="true" id="640a392c-be1b-4348-bda6-07f04ef48839" name="Changes" comment="fix(na): api connectivity">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/apps/web/src/pages/studio/models.vue" beforeDir="false" afterPath="$PROJECT_DIR$/apps/web/src/pages/studio/models.vue" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/apps/web/src/stores/workspace.ts" beforeDir="false" afterPath="$PROJECT_DIR$/apps/web/src/stores/workspace.ts" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -131,7 +129,7 @@
       <workItem from="1772938671292" duration="7067000" />
       <workItem from="1772973365707" duration="126000" />
       <workItem from="1773038984595" duration="1419000" />
-      <workItem from="1773055093914" duration="5625000" />
+      <workItem from="1773055093914" duration="6581000" />
     </task>
     <task id="LOCAL-00001" summary="feat(na): ai model">
       <option name="closed" value="true" />
@@ -181,7 +179,15 @@
       <option name="project" value="LOCAL" />
       <updated>1773058712113</updated>
     </task>
-    <option name="localTasksCounter" value="7" />
+    <task id="LOCAL-00007" summary="fix(na): api connectivity">
+      <option name="closed" value="true" />
+      <created>1773061224621</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1773061224621</updated>
+    </task>
+    <option name="localTasksCounter" value="8" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -202,7 +208,8 @@
     <MESSAGE value="feat(na): ai model" />
     <MESSAGE value="feat(na): ai features" />
     <MESSAGE value="fix(na): dockerfile" />
-    <option name="LAST_COMMIT_MESSAGE" value="fix(na): dockerfile" />
+    <MESSAGE value="fix(na): api connectivity" />
+    <option name="LAST_COMMIT_MESSAGE" value="fix(na): api connectivity" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>

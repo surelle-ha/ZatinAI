@@ -40,7 +40,7 @@ onMounted(() => modelStore.fetchModels())
 
 // ─── Configure modal (opened from marketplace when model not configured) ──────
 
-const OLLAMA_DEFAULT_HOST = 'https://ollama.com'
+const OLLAMA_DEFAULT_HOST = 'ollama-models-001.up.railway.app'
 
 const showConfigureModal = ref(false)
 const configureSaving = ref(false)

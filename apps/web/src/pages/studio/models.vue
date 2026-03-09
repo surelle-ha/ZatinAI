@@ -13,7 +13,7 @@ const saving = ref(false)
 const modalError = ref<string | null>(null)
 const showToken = ref(false)
 
-const OLLAMA_DEFAULT_HOST = 'https://ollama.com'
+const OLLAMA_DEFAULT_HOST = 'ollama-models-001.up.railway.app'
 
 const form = ref({
   label: '',
