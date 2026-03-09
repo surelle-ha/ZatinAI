@@ -43,9 +43,10 @@ async function onSubmit(payload: FormSubmitEvent<Schema>) {
   const { email, password } = payload.data
   const result = await session.login(email, password)
 
-  loading.value = false
-
   if (result.success) {
+    const workspace = useWorkspaceStore()
+    await workspace.fetchWorkspaces()   // ← add this
+
     toast.add({
       title: 'Success',
       description: 'You are now logged in.'
@@ -59,7 +60,10 @@ async function onSubmit(payload: FormSubmitEvent<Schema>) {
       color: 'error'
     })
   }
+
+  loading.value = false
 }
+
 </script>
 
 <template>

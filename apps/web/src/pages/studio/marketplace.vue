@@ -40,7 +40,7 @@ onMounted(() => modelStore.fetchModels())
 
 // ─── Configure modal (opened from marketplace when model not configured) ──────
 
-const OLLAMA_DEFAULT_HOST = 'http://localhost:11434'
+const OLLAMA_DEFAULT_HOST = 'https://ollama.com'
 
 const showConfigureModal = ref(false)
 const configureSaving = ref(false)

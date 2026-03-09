@@ -5,25 +5,24 @@ defineProps<{
   collapsed?: boolean
 }>()
 
-const useWorkspace = useWorkspaceStore();
+const useWorkspace = useWorkspaceStore()
 const workspace = computed(() => useWorkspace.activeWorkspace)
 
-
-const teams = ref([{
-  label: workspace.value?.publicName || 'Unknown 300',
+const teams = computed(() => [{
+  label: workspace.value?.publicName || 'Loading...',
   avatar: {
     src: 'https://cdn-icons-png.freepik.com/512/7717/7717267.png',
-    alt: workspace.value?.publicName || 'Unknown 300'
+    alt: workspace.value?.publicName || 'Loading...'
   }
 }])
 
-const selectedTeam = ref(teams.value[0])
+const selectedTeam = computed(() => teams.value[0])
 
 const items = computed<DropdownMenuItem[][]>(() => {
   return [teams.value.map(team => ({
     ...team,
     onSelect() {
-      selectedTeam.value = team
+      // handle selection
     }
   })), [{
     label: 'Invite Members',

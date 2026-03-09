@@ -4,7 +4,11 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="640a392c-be1b-4348-bda6-07f04ef48839" name="Changes" comment="fix(na): dockerfile" />
+    <list default="true" id="640a392c-be1b-4348-bda6-07f04ef48839" name="Changes" comment="fix(na): dockerfile">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/web/src/components/TeamsMenu.vue" beforeDir="false" afterPath="$PROJECT_DIR$/apps/web/src/components/TeamsMenu.vue" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/web/src/pages/auth/sign-in.vue" beforeDir="false" afterPath="$PROJECT_DIR$/apps/web/src/pages/auth/sign-in.vue" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -127,7 +131,7 @@
       <workItem from="1772938671292" duration="7067000" />
       <workItem from="1772973365707" duration="126000" />
       <workItem from="1773038984595" duration="1419000" />
-      <workItem from="1773055093914" duration="2533000" />
+      <workItem from="1773055093914" duration="3495000" />
     </task>
     <task id="LOCAL-00001" summary="feat(na): ai model">
       <option name="closed" value="true" />
@@ -161,7 +165,15 @@
       <option name="project" value="LOCAL" />
       <updated>1773057635048</updated>
     </task>
-    <option name="localTasksCounter" value="5" />
+    <task id="LOCAL-00005" summary="fix(na): dockerfile">
+      <option name="closed" value="true" />
+      <created>1773057686200</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1773057686200</updated>
+    </task>
+    <option name="localTasksCounter" value="6" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
