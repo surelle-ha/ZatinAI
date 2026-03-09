@@ -4,7 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="640a392c-be1b-4348-bda6-07f04ef48839" name="Changes" comment="feat(na): ai features" />
+    <list default="true" id="640a392c-be1b-4348-bda6-07f04ef48839" name="Changes" comment="fix(na): dockerfile" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -127,7 +127,7 @@
       <workItem from="1772938671292" duration="7067000" />
       <workItem from="1772973365707" duration="126000" />
       <workItem from="1773038984595" duration="1419000" />
-      <workItem from="1773055093914" duration="2217000" />
+      <workItem from="1773055093914" duration="2533000" />
     </task>
     <task id="LOCAL-00001" summary="feat(na): ai model">
       <option name="closed" value="true" />
@@ -153,7 +153,15 @@
       <option name="project" value="LOCAL" />
       <updated>1773057322892</updated>
     </task>
-    <option name="localTasksCounter" value="4" />
+    <task id="LOCAL-00004" summary="fix(na): dockerfile">
+      <option name="closed" value="true" />
+      <created>1773057635048</created>
+      <option name="number" value="00004" />
+      <option name="presentableId" value="LOCAL-00004" />
+      <option name="project" value="LOCAL" />
+      <updated>1773057635048</updated>
+    </task>
+    <option name="localTasksCounter" value="5" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -173,7 +181,8 @@
   <component name="VcsManagerConfiguration">
     <MESSAGE value="feat(na): ai model" />
     <MESSAGE value="feat(na): ai features" />
-    <option name="LAST_COMMIT_MESSAGE" value="feat(na): ai features" />
+    <MESSAGE value="fix(na): dockerfile" />
+    <option name="LAST_COMMIT_MESSAGE" value="fix(na): dockerfile" />
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
