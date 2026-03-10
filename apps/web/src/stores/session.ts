@@ -48,7 +48,7 @@ export const useSessionStore = defineStore('session', {
       this.initialized = true
     },
 
-    async _authRequest(endpoint: string, email: string, password: string) {
+    async _authRequest(endpoint: string, email: string, password: string, workspaceName?: string) {
       try {
         const config = useRuntimeConfig()
         const response = await $fetch<{
@@ -57,7 +57,7 @@ export const useSessionStore = defineStore('session', {
           profile: Profile
         }>(`${config.public.apiBase}${endpoint}`, {
           method: 'POST',
-          body: { email, password }
+          body: { email, password, workspaceName }
         })
 
         this.setSession(response.accessToken, response.refreshToken, response.profile)
@@ -75,8 +75,8 @@ export const useSessionStore = defineStore('session', {
       return this._authRequest('/api/v1/auth/sign-in/basic', email, password)
     },
 
-    register(email: string, password: string) {
-      return this._authRequest('/api/v1/auth/sign-up/basic', email, password)
+    register(workspaceName: string, email: string, password: string) {
+      return this._authRequest('/api/v1/auth/sign-up/basic', email, password, workspaceName)
     },
 
     // Call this when a 401 is received anywhere in the app
